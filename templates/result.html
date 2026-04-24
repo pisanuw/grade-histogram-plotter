@@ -24,11 +24,10 @@
         border-radius: 18px;
         box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
         padding: 28px;
+        margin-bottom: 20px;
       }
 
-      h1 {
-        margin-top: 0;
-      }
+      h1, h2 { margin-top: 0; }
 
       img {
         max-width: 100%;
@@ -37,10 +36,82 @@
         margin: 20px auto;
       }
 
-      a {
-        color: #2563eb;
-        text-decoration: none;
+      .warning {
+        background: #fef3c7;
+        border: 1px solid #f59e0b;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 16px;
         font-weight: 600;
+        color: #92400e;
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+
+      button, .btn {
+        padding: 10px 24px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        border: none;
+      }
+
+      .btn-primary {
+        background: #2563eb;
+        color: #fff;
+      }
+
+      .btn-primary:hover { background: #1d4ed8; }
+
+      .btn-secondary {
+        background: #f1f5f9;
+        color: #1f2937;
+        border: 1px solid #d1d5db;
+      }
+
+      .btn-secondary:hover { background: #e2e8f0; }
+
+      details { margin-top: 8px; }
+
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: #2563eb;
+        list-style: none;
+        padding: 4px 0;
+      }
+
+      summary::-webkit-details-marker { display: none; }
+      summary::before { content: "▶ "; font-size: 11px; }
+      details[open] summary::before { content: "▼ "; }
+
+      .edit-grid {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 16px;
+        margin-top: 16px;
+        align-items: start;
+      }
+
+      label { font-weight: 600; display: block; margin-bottom: 4px; }
+
+      textarea {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 14px;
+        resize: vertical;
       }
     </style>
   </head>
@@ -48,9 +119,51 @@
     <main class="page">
       <section class="card">
         <h1>Histogram Result</h1>
-        {{ plot_data | safe }}
-        <p><a href="/">Create another histogram</a></p>
+
+        {% if nan_count %}
+        <p class="warning">{{ nan_count }} non-numeric value(s) were ignored.</p>
+        {% endif %}
+
+        <img src="data:image/png;base64,{{ img_b64 }}" alt="{{ stats_text }}">
+
+        <div class="actions">
+          <button class="btn btn-primary" onclick="downloadChart()">Download PNG</button>
+          <a class="btn btn-secondary" href="/">New histogram</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <details>
+          <summary>Edit inputs &amp; replot</summary>
+          <form method="post" action="/">
+            <div class="edit-grid">
+              <div>
+                <label for="cutoffs">Cutoffs</label>
+                <textarea id="cutoffs" name="cutoffs" rows="7" cols="10">{{ cutoffs_text }}</textarea>
+              </div>
+              <div>
+                <label for="grades">Grades</label>
+                <textarea id="grades" name="grades" rows="12" cols="20">{{ grades_text }}</textarea>
+              </div>
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn btn-primary">Replot</button>
+            </div>
+          </form>
+        </details>
       </section>
     </main>
+
+    <script>
+      function downloadChart() {
+        const img = document.querySelector('img');
+        const a = document.createElement('a');
+        a.href = img.src;
+        a.download = 'histogram.png';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    </script>
   </body>
 </html>

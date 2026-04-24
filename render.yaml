@@ -5,4 +5,8 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --bind 0.0.0.0:$PORT flask_app:app
+    healthCheckPath: /health
     autoDeploy: true
+    envVars:
+      - key: WEB_CONCURRENCY
+        value: 1
