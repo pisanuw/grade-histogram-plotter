@@ -161,7 +161,7 @@ def compute_chart_data(data, cutoffs):
         'distribution': ys,
         'percentages': [int(round(x / total * 100)) for x in ys] if total else [],
     }
-    chart_data = {'labels': xs, 'values': ys}
+    chart_data = {'labels': xs, 'counts': ys}
     return chart_data, stats, nan_count
 
 

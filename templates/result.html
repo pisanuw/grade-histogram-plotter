@@ -204,16 +204,26 @@
       </section>
     </main>
 
+    <script type="application/json" id="chart-data">
+      {"labels": {{ chart_data.labels | tojson }}, "counts": {{ chart_data.counts | tojson }}}
+    </script>
+    <script type="application/json" id="stats-data">
+      {{ stats | tojson }}
+    </script>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script>
-      const canvas = document.getElementById('myChart');
-      const chart = new Chart(canvas, {
+      const chartData = JSON.parse(document.getElementById('chart-data').textContent);
+      const stats     = JSON.parse(document.getElementById('stats-data').textContent);
+      const canvas    = document.getElementById('myChart');
+
+      new Chart(canvas, {
         type: 'bar',
         data: {
-          labels: {{ chart_data.labels | tojson }},
+          labels: chartData.labels,
           datasets: [{
             label: '# of Students',
-            data: {{ chart_data.values | tojson }},
+            data: chartData.counts,
             backgroundColor: 'rgba(37, 99, 235, 0.75)',
             borderColor: 'rgba(37, 99, 235, 1)',
             borderWidth: 1,
@@ -241,9 +251,75 @@
         }
       });
 
+      function roundRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+      }
+
       function downloadChart() {
+        const w = canvas.width;
+        const h = canvas.height;
+        const off = document.createElement('canvas');
+        off.width  = w;
+        off.height = h;
+        const ctx = off.getContext('2d');
+
+        // White background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+
+        // Chart
+        ctx.drawImage(canvas, 0, 0);
+
+        // Stats box (top-left, matching old matplotlib style)
+        const lines = [
+          `Total:  ${stats.total}`,
+          `Mean:   ${stats.mean}`,
+          `Median: ${stats.median}`,
+          `Stdev:  ${stats.stdev}`,
+          `Min:    ${stats.min}`,
+          `Max:    ${stats.max}`,
+          `Dist:   [${stats.distribution.join(', ')}]`,
+          `Pct:    [${stats.percentages.join(', ')}]`,
+        ];
+
+        const fontSize   = Math.round(h * 0.028);
+        const lineH      = Math.round(fontSize * 1.5);
+        const pad        = Math.round(fontSize * 0.8);
+        ctx.font         = `${fontSize}px monospace`;
+        const maxW       = Math.max(...lines.map(l => ctx.measureText(l).width));
+        const boxW       = maxW + pad * 2;
+        const boxH       = lines.length * lineH + pad * 2;
+        const boxX       = Math.round(w * 0.07);
+        const boxY       = Math.round(h * 0.06);
+
+        ctx.save();
+        ctx.fillStyle    = 'rgba(245, 222, 179, 0.85)'; // wheat
+        roundRect(ctx, boxX, boxY, boxW, boxH, 6);
+        ctx.fill();
+        ctx.strokeStyle  = 'rgba(180, 140, 80, 0.9)';
+        ctx.lineWidth    = 1;
+        roundRect(ctx, boxX, boxY, boxW, boxH, 6);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle    = '#000000';
+        ctx.font         = `${fontSize}px monospace`;
+        lines.forEach((line, i) => {
+          ctx.fillText(line, boxX + pad, boxY + pad + fontSize + i * lineH);
+        });
+
         const a = document.createElement('a');
-        a.href = canvas.toDataURL('image/png');
+        a.href = off.toDataURL('image/png');
         a.download = 'histogram.png';
         document.body.appendChild(a);
         a.click();
