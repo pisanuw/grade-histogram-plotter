@@ -14,7 +14,7 @@ app = Flask(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(BASE_DIR, 'log.txt')
 DEFAULT_CUTOFFS = [50.0, 60.0, 70.0, 80.0, 90.0]
-DEFAULT_GRADES = "48\n55\n61\n72\n88\n91\nA"
+DEFAULT_GRADES = "70\n75\n80\n85\n85\n85\n75\n80\n85\n85\n85\n75\n80\n85\n85\n85\n90\n100"
 
 
 def get_cutoffs():
