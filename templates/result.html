@@ -29,13 +29,6 @@
 
       h1, h2 { margin-top: 0; }
 
-      img {
-        max-width: 100%;
-        height: auto;
-        display: block;
-        margin: 20px auto;
-      }
-
       .warning {
         background: #fef3c7;
         border: 1px solid #f59e0b;
@@ -46,11 +39,46 @@
         color: #92400e;
       }
 
+      .chart-wrap {
+        position: relative;
+        max-width: 800px;
+        margin: 0 auto 24px;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+        gap: 12px;
+        margin: 0 0 24px;
+      }
+
+      .stat-box {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 12px 8px;
+        text-align: center;
+      }
+
+      .stat-label {
+        font-size: 11px;
+        color: #6b7280;
+        text-transform: uppercase;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+      }
+
+      .stat-value {
+        font-size: 20px;
+        font-weight: 700;
+        margin-top: 4px;
+        color: #1f2937;
+      }
+
       .actions {
         display: flex;
         gap: 12px;
         flex-wrap: wrap;
-        margin-top: 16px;
       }
 
       button, .btn {
@@ -61,24 +89,15 @@
         cursor: pointer;
         text-decoration: none;
         border: none;
+        display: inline-block;
       }
 
-      .btn-primary {
-        background: #2563eb;
-        color: #fff;
-      }
-
+      .btn-primary { background: #2563eb; color: #fff; }
       .btn-primary:hover { background: #1d4ed8; }
-
-      .btn-secondary {
-        background: #f1f5f9;
-        color: #1f2937;
-        border: 1px solid #d1d5db;
-      }
-
+      .btn-secondary { background: #f1f5f9; color: #1f2937; border: 1px solid #d1d5db; }
       .btn-secondary:hover { background: #e2e8f0; }
 
-      details { margin-top: 8px; }
+      details { margin-top: 4px; }
 
       summary {
         cursor: pointer;
@@ -86,6 +105,7 @@
         color: #2563eb;
         list-style: none;
         padding: 4px 0;
+        user-select: none;
       }
 
       summary::-webkit-details-marker { display: none; }
@@ -124,7 +144,36 @@
         <p class="warning">{{ nan_count }} non-numeric value(s) were ignored.</p>
         {% endif %}
 
-        <img src="data:image/png;base64,{{ img_b64 }}" alt="{{ stats_text }}">
+        <div class="chart-wrap">
+          <canvas id="myChart"></canvas>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-label">Total</div>
+            <div class="stat-value">{{ stats.total }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Mean</div>
+            <div class="stat-value">{{ stats.mean }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Median</div>
+            <div class="stat-value">{{ stats.median }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Stdev</div>
+            <div class="stat-value">{{ stats.stdev }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Min</div>
+            <div class="stat-value">{{ stats.min }}</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Max</div>
+            <div class="stat-value">{{ stats.max }}</div>
+          </div>
+        </div>
 
         <div class="actions">
           <button class="btn btn-primary" onclick="downloadChart()">Download PNG</button>
@@ -135,18 +184,19 @@
       <section class="card">
         <details>
           <summary>Edit inputs &amp; replot</summary>
-          <form method="post" action="/">
+          <form method="post" action="/" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="edit-grid">
               <div>
                 <label for="cutoffs">Cutoffs</label>
-                <textarea id="cutoffs" name="cutoffs" rows="7" cols="10">{{ cutoffs_text }}</textarea>
+                <textarea id="cutoffs" name="cutoffs" rows="7">{{ cutoffs_text }}</textarea>
               </div>
               <div>
                 <label for="grades">Grades</label>
-                <textarea id="grades" name="grades" rows="12" cols="20">{{ grades_text }}</textarea>
+                <textarea id="grades" name="grades" rows="12">{{ grades_text }}</textarea>
               </div>
             </div>
-            <div class="actions">
+            <div class="actions" style="margin-top: 16px;">
               <button type="submit" class="btn btn-primary">Replot</button>
             </div>
           </form>
@@ -154,11 +204,46 @@
       </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script>
+      const canvas = document.getElementById('myChart');
+      const chart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: {{ chart_data.labels | tojson }},
+          datasets: [{
+            label: '# of Students',
+            data: {{ chart_data.values | tojson }},
+            backgroundColor: 'rgba(37, 99, 235, 0.75)',
+            borderColor: 'rgba(37, 99, 235, 1)',
+            borderWidth: 1,
+            borderRadius: 4,
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ${ctx.parsed.y} student${ctx.parsed.y !== 1 ? 's' : ''}`
+              }
+            }
+          },
+          scales: {
+            x: { title: { display: true, text: 'Grade Range', font: { weight: 'bold' } } },
+            y: {
+              beginAtZero: true,
+              ticks: { stepSize: 1 },
+              title: { display: true, text: '# of Students', font: { weight: 'bold' } }
+            }
+          }
+        }
+      });
+
       function downloadChart() {
-        const img = document.querySelector('img');
         const a = document.createElement('a');
-        a.href = img.src;
+        a.href = canvas.toDataURL('image/png');
         a.download = 'histogram.png';
         document.body.appendChild(a);
         a.click();

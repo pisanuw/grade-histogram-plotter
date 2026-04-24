@@ -4,9 +4,11 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT flask_app:app
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --timeout 30 flask_app:app
     healthCheckPath: /health
     autoDeploy: true
     envVars:
+      - key: SECRET_KEY
+        generateValue: true
       - key: WEB_CONCURRENCY
         value: 1

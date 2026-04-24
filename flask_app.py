@@ -1,42 +1,53 @@
-import base64
 import logging
 import os
 import statistics
 from datetime import datetime
-from io import BytesIO
 
-import matplotlib
 from flask import Flask, render_template, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from matplotlib.figure import Figure
-
-matplotlib.use('Agg')
+from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-only-change-in-prod')
 logging.basicConfig(level=logging.INFO)
 
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    storage_uri="memory://",
-)
+csrf = CSRFProtect(app)
+limiter = Limiter(get_remote_address, app=app, storage_uri="memory://")
 
 DEFAULT_CUTOFFS = [50.0, 60.0, 70.0, 80.0, 90.0]
 DEFAULT_GRADES = "70\n75\n80\n85\n85\n85\n75\n80\n85\n85\n85\n75\n80\n85\n85\n85\n90\n100"
 MAX_GRADES = 1000
 
 
-def get_cutoffs():
-    raw_cutoffs = request.form.get('cutoffs', '')
-    return parse_cutoffs(raw_cutoffs)
+@app.after_request
+def set_security_headers(response):
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:;"
+    )
+    return response
 
 
-def get_grades():
-    raw = request.form.get('grades', '')
-    # Accept newline, comma, or tab as delimiters
-    normalized = raw.replace(',', '\n').replace('\t', '\n')
+def parse_grade_text(text):
+    normalized = text.replace(',', '\n').replace('\t', '\n')
     return [x.strip() for x in normalized.split('\n') if x.strip()]
+
+
+def get_grades_and_text():
+    file = request.files.get('grades_file')
+    if file and file.filename:
+        content = file.read().decode('utf-8', errors='ignore')
+        grades = parse_grade_text(content)
+        return grades, '\n'.join(grades)
+    raw = request.form.get('grades', '')
+    return parse_grade_text(raw), raw.strip()
+
+
+def get_cutoffs():
+    return parse_cutoffs(request.form.get('cutoffs', ''))
 
 
 def format_cutoff(value):
@@ -78,14 +89,15 @@ def buckets2labels(cutoffs):
 def process_post():
     ip_addr = request.environ.get('REMOTE_ADDR', 'unknown')
     timestamp = datetime.now().isoformat(timespec='seconds')
-    logging.info("%s: %s", timestamp, ip_addr)
 
     cutoffs_text = request.form.get('cutoffs', '').strip()
-    grades_text = request.form.get('grades', '').strip()
+    grades, grades_text = get_grades_and_text()
 
     try:
-        img_b64, stats_text, nan_count = generate_plot()
+        cutoffs = get_cutoffs()
+        chart_data, stats, nan_count = compute_chart_data(grades, cutoffs)
     except ValueError as exc:
+        logging.info("%s: %s error=%s", timestamp, ip_addr, exc)
         return render_template(
             'input-grades.html',
             default_cutoffs=cutoffs_text or "\n".join(format_cutoff(x) for x in DEFAULT_CUTOFFS),
@@ -93,10 +105,12 @@ def process_post():
             error_message=str(exc),
         ), 400
 
+    logging.info("%s: %s grades=%d cutoffs=%s", timestamp, ip_addr, len(grades),
+                 cutoffs_text or 'default')
     return render_template(
         'result.html',
-        img_b64=img_b64,
-        stats_text=stats_text,
+        chart_data=chart_data,
+        stats=stats,
         nan_count=nan_count,
         cutoffs_text=cutoffs_text,
         grades_text=grades_text,
@@ -122,68 +136,33 @@ def health():
     return "OK", 200
 
 
-def generate_plot():
-    fig, stats_text, nan_count = create_bar_plot()
-    buf = BytesIO()
-    fig.savefig(buf, format="png")
-    img_b64 = base64.b64encode(buf.getbuffer()).decode("ascii")
-    return img_b64, stats_text, nan_count
-
-
-def create_bar_plot():
-    cutoffs = get_cutoffs()
-    data = get_grades()
+def compute_chart_data(data, cutoffs):
     if not data:
         raise ValueError('Enter at least one grade.')
     if len(data) > MAX_GRADES:
         raise ValueError(f'Too many grades. Maximum is {MAX_GRADES}.')
 
-    nan_count = sum(1 for x in data if not is_float(x))
+    numeric = [float(x) for x in data if is_float(x)]
+    nan_count = len(data) - len(numeric)
+
     xs = buckets2labels(cutoffs)
     ys = data_into_buckets(data, cutoffs)
     if len(xs) > len(ys):
         xs.pop()
-    stats_text = get_dist_stats(data, ys)
 
-    fig = Figure()
-    axis = fig.add_subplot(1, 1, 1)
-    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-    axis.text(0.02, 0.95, stats_text, transform=axis.transAxes, fontsize=10,
-              verticalalignment='top', bbox=props)
-    axis.bar(xs, ys)
-    axis.set_xlabel("Grades")
-    axis.set_ylabel("# of Students")
-    fig.tight_layout()
-    return fig, stats_text, nan_count
-
-
-def get_dist_stats(data, distribution):
-    numeric = [float(x) for x in data if is_float(x)]
-    dist_str = ", ".join(str(x) for x in distribution)
-
-    if not numeric:
-        return "\n".join([
-            f"Total: {len(data)}",
-            "Mean: n/a", "Median: n/a", "Stdev: n/a", "Min: n/a", "Max: n/a",
-            f"Dist: [{dist_str}]",
-        ])
-
-    stdev = "n/a" if len(numeric) <= 1 else str(round(statistics.stdev(numeric), 1))
-    total = sum(distribution)
-    pct_str = (
-        "[" + ", ".join(str(int(round(x / total * 100))) for x in distribution) + "]"
-        if total else "[]"
-    )
-    return "\n".join([
-        f"Total: {len(data)}",
-        f"Mean: {round(statistics.mean(numeric), 1)}",
-        f"Median: {round(statistics.median(numeric), 1)}",
-        f"Stdev: {stdev}",
-        f"Min: {round(min(numeric), 1)}",
-        f"Max: {round(max(numeric), 1)}",
-        f"Dist: [{dist_str}]",
-        f"Pct: {pct_str}",
-    ])
+    total = sum(ys)
+    stats = {
+        'total': len(data),
+        'mean': round(statistics.mean(numeric), 1) if numeric else 'n/a',
+        'median': round(statistics.median(numeric), 1) if numeric else 'n/a',
+        'stdev': str(round(statistics.stdev(numeric), 1)) if len(numeric) > 1 else 'n/a',
+        'min': round(min(numeric), 1) if numeric else 'n/a',
+        'max': round(max(numeric), 1) if numeric else 'n/a',
+        'distribution': ys,
+        'percentages': [int(round(x / total * 100)) for x in ys] if total else [],
+    }
+    chart_data = {'labels': xs, 'values': ys}
+    return chart_data, stats, nan_count
 
 
 def data_into_buckets(data, cutoffs):
